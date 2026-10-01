@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photo Sorter</title>
+<style>
+:root{--bg:#f4f6fb;--surface:#fff;--s2:#f0f3f9;--border:#e2e7f0;--text:#141a2b;--muted:#64708a;--a:#4f46e5;--b:#7c3aed;--ok:#059669;--err:#dc2626}
+@media(prefers-color-scheme:dark){:root{--bg:#0b0f1a;--surface:#131a2b;--s2:#1a2338;--border:#243049;--text:#e8ecf6;--muted:#8a96b2;--a:#818cf8;--b:#a78bfa}}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;display:grid;place-items:center;padding:24px}
+.app{width:100%;max-width:640px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:30px;box-shadow:0 8px 32px rgba(16,24,40,.12)}
+.head{display:flex;gap:14px;align-items:center;margin-bottom:22px}.logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--a),var(--b));display:grid;place-items:center;font-size:24px}
+h1{margin:0;font-size:22px}.head p{margin:0;color:var(--muted);font-size:13px}
+.step{display:flex;gap:14px;align-items:center;padding:14px;border:1px solid var(--border);border-radius:12px;margin-bottom:12px;background:var(--s2)}
+.num{width:28px;height:28px;border-radius:50%;background:var(--a);color:#fff;display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}.step.done .num{background:var(--ok)}
+.step div{flex:1;min-width:0}.step b{display:block}.step small{color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button,select{font:inherit;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);padding:9px 14px;cursor:pointer;font-weight:600}
+button:hover{border-color:var(--a)}
+#start{width:100%;padding:15px;font-size:17px;margin-top:6px;border:0;color:#fff;background:linear-gradient(135deg,var(--a),var(--b))}#start:disabled{opacity:.45;cursor:not-allowed}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}.opts label{font-size:12px;font-weight:600;color:var(--muted);display:block}.opts select{width:100%;margin-top:4px}
+.prog{height:10px;border-radius:99px;background:var(--s2);overflow:hidden;margin-top:18px;display:none}.prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--a),var(--b));transition:width .2s}
+#status{margin-top:10px;color:var(--muted);font-size:13px;min-height:20px}
+.stats{display:none;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}.stats div{background:var(--s2);border-radius:10px;padding:10px;text-align:center}.stats b{display:block;font-size:20px}.stats span{font-size:11px;color:var(--muted)}
+.warn{background:rgba(220,38,38,.1);color:var(--err);padding:12px;border-radius:10px;margin-bottom:14px;display:none}
+@media(max-width:520px){.stats{grid-template-columns:repeat(2,1fr)}.opts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="head"><div class="logo">📸</div><div><h1>Photo Sorter</h1><p>Arrange photos by date &amp; location automatically</p></div></div>
+  <div class="warn" id="warn">This app needs <b>Google Chrome</b> or <b>Microsoft Edge</b> on a computer to read and write folders. Please open this file there.</div>
+  <div class="step" id="s1"><span class="num">1</span><div><b>Choose your photos folder</b><small id="t1">Photos inside sub-folders are included</small></div><button id="b1">Select</button></div>
+  <div class="step" id="s2"><span class="num">2</span><div><b>Choose where to save sorted photos</b><small id="t2">Pick any folder on your computer</small></div><button id="b2">Select</button></div>
+  <div class="opts">
+    <div><label>Folder layout</label><select id="tpl">
+      <option value="{year}/{month}-{month_name}/{place}">Year / Month / Location</option>
+      <option value="{year}/{month}-{month_name}">Year / Month</option>
+      <option value="{place}/{year}">Location / Year</option>
+      <option value="{camera}/{year}/{month}">Camera / Year / Month</option>
+      <option value="{year}-{month}-{day}">One folder per day</option></select></div>
+    <div><label>Photos</label><select id="mode"><option value="copy">Copy (keeps originals)</option><option value="move">Move (frees space)</option></select></div>
+  </div>
+  <button id="start" disabled>▶ Start</button>
+  <div class="prog" id="prog"><i id="bar"></i></div>
+  <div id="status"></div>
+  <div class="stats" id="stats"><div><b id="n-ok">0</b><span>Sorted</span></div><div><b id="n-dup">0</b><span>Duplicates skipped</span></div><div><b id="n-gps">0</b><span>With location</span></div><div><b id="n-err">0</b><span>Failed</span></div></div>
+</div>
+<script>
+//#core-start
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const CITIES="Delhi,28.61,77.21;Noida,28.54,77.39;Gurugram,28.46,77.03;Ghaziabad,28.67,77.45;Greater Noida,28.47,77.5;Agra,27.18,78.02;Jaipur,26.91,75.79;Lucknow,26.85,80.95;Varanasi,25.32,83.01;Mumbai,19.08,72.88;Pune,18.52,73.86;Goa,15.5,73.83;Bengaluru,12.97,77.59;Chennai,13.08,80.27;Hyderabad,17.39,78.49;Kolkata,22.57,88.36;Ahmedabad,23.02,72.57;Chandigarh,30.73,76.78;Amritsar,31.63,74.87;Shimla,31.1,77.17;Manali,32.24,77.19;Rishikesh,30.09,78.27;Haridwar,29.95,78.16;Dehradun,30.32,78.03;Srinagar,34.08,74.8;Udaipur,24.59,73.71;Kochi,9.93,76.27;Kathmandu,27.72,85.32;Dubai,25.2,55.27;Singapore,1.35,103.82;Bangkok,13.76,100.5;London,51.51,-0.13;Paris,48.86,2.35;Rome,41.9,12.5;Berlin,52.52,13.4;New York,40.71,-74.01;San Francisco,37.77,-122.42;Los Angeles,34.05,-118.24;Toronto,43.65,-79.38;Tokyo,35.68,139.69;Sydney,-33.87,151.21".split(";").map(s=>{const[a,b,c]=s.split(",");return{n:a,lat:+b,lon:+c}});
+function km(a,b,c,d){const r=x=>x*Math.PI/180,h=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;return 12742*Math.asin(Math.sqrt(h))}
+function placeName(lat,lon){let best=null,bd=1e9;for(const c of CITIES){const d=km(lat,lon,c.lat,c.lon);if(d<bd){bd=d;best=c}}
+  return bd<60?best.n:`${Math.abs(lat).toFixed(1)}${lat>=0?"N":"S"}_${Math.abs(lon).toFixed(1)}${lon>=0?"E":"W"}`}
+const clean=s=>s.replace(/[<>:"\/\\|?*\x00-\x1f]/g,"_").replace(/^[ .]+|[ .]+$/g,"")||"Unknown";
+function parseTiff(v,t){
+  const le=v.getUint16(t)===0x4949,u16=o=>v.getUint16(o,le),u32=o=>v.getUint32(o,le);
+  const str=(o,n)=>{let s="";for(let i=0;i<n;i++){const c=v.getUint8(o+i);if(!c)break;s+=String.fromCharCode(c)}return s.trim()};
+  const ifd=off=>{const out={},p=t+off,n=u16(p);
+    for(let i=0;i<n;i++){const e=p+2+i*12,tag=u16(e),type=u16(e+2),cnt=u32(e+4),sz={1:1,2:1,3:2,4:4,5:8}[type]||1,vo=sz*cnt>4?t+u32(e+8):e+8;
+      if(type===2)out[tag]=str(vo,cnt);
+      else if(type===5){const a=[];for(let k=0;k<Math.min(cnt,3);k++){const d=u32(vo+k*8+4);a.push(d?u32(vo+k*8)/d:0)}out[tag]=a}
+      else if(type===3)out[tag]=u16(vo);else if(type===4)out[tag]=u32(vo);else out[tag]=v.getUint8(vo)}
+    return out};
+  const r={};let i0={},ex={},g={};
+  try{i0=ifd(u32(t+4))}catch(e){}
+  try{if(i0[0x8769])ex=ifd(i0[0x8769])}catch(e){}
+  try{if(i0[0x8825])g=ifd(i0[0x8825])}catch(e){}
+  const raw=ex[0x9003]||ex[0x9004]||i0[0x132],m=/(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec(raw||"");
+  if(m&&+m[1]>1900)r.date=new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6]);
+  if(i0[0x110]){const mk=i0[0x10f]||"",md=i0[0x110];r.camera=md.startsWith(mk)?md:`${mk} ${md}`.trim()}
+  if(g[2]&&g[4]&&g[2].length>=3&&g[4].length>=3){
+    const dd=(a,ref)=>{const x=a[0]+a[1]/60+a[2]/3600;return /[SW]/i.test(ref)?-x:x};
+    r.lat=dd(g[2],g[1]);r.lon=dd(g[4],g[3])}
+  return r}
+async function readExif(file){
+  try{const v=new DataView(await file.slice(0,262144).arrayBuffer());
+    if(v.getUint16(0)!==0xFFD8)return{};
+    let o=2;while(o+4<v.byteLength){const m=v.getUint16(o);
+      if(m===0xFFE1&&v.getUint32(o+4)===0x45786966)return parseTiff(v,o+10);
+      if((m&0xFF00)!==0xFF00)break;o+=2+v.getUint16(o+2)}
+  }catch(e){}
+  return{}}
+function folderFor(tpl,meta,fallbackDate){
+  const d=meta.date||fallbackDate;
+  const f={year:String(d.getFullYear()),month:String(d.getMonth()+1).padStart(2,"0"),month_name:MONTHS[d.getMonth()],day:String(d.getDate()).padStart(2,"0"),
+    place:meta.lat!=null?clean(placeName(meta.lat,meta.lon)):"No-Location",camera:meta.camera?clean(meta.camera):"Unknown-Camera"};
+  return tpl.split("/").map(p=>clean(p.replace(/{(\w+)}/g,(_,k)=>f[k]??"Unknown")))}
+//#core-end
+const $=s=>document.querySelector(s),EXT=/\.(jpe?g|png|tiff?|heic|heif|webp)$/i;
+let src=null,dst=null,running=false;
+if(!window.showDirectoryPicker){$("#warn").style.display="block";$("#b1").disabled=$("#b2").disabled=true}
+function refresh(){$("#s1").classList.toggle("done",!!src);$("#s2").classList.toggle("done",!!dst);$("#start").disabled=!(src&&dst)||running}
+async function pick(which){
+  try{const h=await showDirectoryPicker({mode:"readwrite"});
+    if(which===1){src=h;$("#t1").textContent="📁 "+h.name}else{dst=h;$("#t2").textContent="📁 "+h.name}
+    if(src&&dst&&await src.isSameEntry(dst)){alert("Please choose two different folders.");which===1?src=null:dst=null}
+  }catch(e){}refresh()}
+$("#b1").onclick=()=>pick(1);$("#b2").onclick=()=>pick(2);
+async function* walk(dir){for await(const[n,h]of dir.entries()){
+  if(h.kind==="directory"){if(!(await h.isSameEntry(dst)))yield*walk(h)}
+  else if(EXT.test(n)&&!n.startsWith("."))yield{dir,name:n,h}}}
+async function hash(f){return[...new Uint8Array(await crypto.subtle.digest("SHA-256",await f.arrayBuffer()))].join(",")}
+async function sameFile(dir,name,file){try{const t=await(await dir.getFileHandle(name)).getFile();return t.size===file.size&&await hash(t)===await hash(file)}catch(e){return null}}
+async function place(dir,name,file){ // returns "dup" or the saved name
+  const dot=name.lastIndexOf("."),stem=dot>0?name.slice(0,dot):name,ext=dot>0?name.slice(dot):"";
+  for(let i=0;i<500;i++){const nm=i?`${stem}_${i}${ext}`:name,s=await sameFile(dir,nm,file);
+    if(s===true)return"dup";
+    if(s===null){const w=await(await dir.getFileHandle(nm,{create:true})).createWritable();await w.write(file);await w.close();return nm}}
+  throw new Error("too many name clashes")}
+$("#start").onclick=async()=>{
+  running=true;refresh();const mode=$("#mode").value,tpl=$("#tpl").value;
+  if(mode==="move"&&!confirm("Move photos? They will be removed from the original folder after being copied."))return(running=false,refresh());
+  const c={ok:0,dup:0,gps:0,err:0};$("#stats").style.display="grid";$("#prog").style.display="block";
+  const show=()=>{$("#n-ok").textContent=c.ok;$("#n-dup").textContent=c.dup;$("#n-gps").textContent=c.gps;$("#n-err").textContent=c.err};
+  $("#status").textContent="Finding photos…";const files=[];for await(const f of walk(src))files.push(f);
+  for(let i=0;i<files.length;i++){const{dir,name,h}=files[i];
+    try{const file=await h.getFile(),meta=await readExif(file);
+      let d=dst;for(const part of folderFor(tpl,meta,new Date(file.lastModified)))d=await d.getDirectoryHandle(part,{create:true});
+      const r=await place(d,name,file);
+      if(r==="dup")c.dup++;else c.ok++;if(meta.lat!=null)c.gps++;
+      if(mode==="move")await dir.removeEntry(name)}
+    catch(e){c.err++;console.warn(name,e)}
+    $("#bar").style.width=((i+1)/files.length*100)+"%";$("#status").textContent=`Sorting ${i+1} of ${files.length}…  ${name}`;show()}
+  $("#status").textContent=files.length?`✅ Finished! ${c.ok} photos sorted into “${dst.name}”.`:"No photos were found in that folder.";
+  running=false;refresh()};
+</script>
+</body>
+</html>
